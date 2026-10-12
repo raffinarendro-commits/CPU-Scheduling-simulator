@@ -31,6 +31,17 @@ Alur kerjanya: **Input → Process/Algorithm → Simulation → Visualization �
 - **Analisis teori:** penjelasan singkat algoritma yang dipilih.
 - Tampilan responsif, mendukung tema terang dan gelap.
 
+## Rumus Perhitungan
+
+| Metrik | Rumus |
+|---|---|
+| Turnaround Time | Waktu selesai − Arrival |
+| Waiting Time | Turnaround − Burst |
+| Response Time | Waktu pertama dapat CPU − Arrival |
+| Rata-rata | Jumlah nilai semua proses ÷ jumlah proses |
+
+Perhitungan dilakukan di fungsi `simulate()` pada `index.html`.
+
 ## Cara Menjalankan
 
 Tidak perlu instalasi, framework, maupun koneksi internet.
