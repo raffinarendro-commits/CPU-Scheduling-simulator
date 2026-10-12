@@ -1,0 +1,550 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>CPU Scheduling Simulator</title>
+
+<style>
+  /* ===== Warna tema (terang & gelap) ===== */
+  :root {
+    --bg: #f3f5f7;
+    --card: #fff;
+    --ink: #14212b;
+    --muted: #5b6b78;
+    --line: #d5dde3;
+    --accent: #0b6e8a;
+    --accent-ink: #fff;
+    --idle: #e3e8ec;
+    box-sizing: border-box;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0e1419; --card: #17202a; --ink: #e6edf2; --muted: #8fa1ae;
+      --line: #2b3946; --accent: #4cc2e0; --accent-ink: #06222b; --idle: #222e39;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0e1419; --card: #17202a; --ink: #e6edf2; --muted: #8fa1ae;
+    --line: #2b3946; --accent: #4cc2e0; --accent-ink: #06222b; --idle: #222e39;
+  }
+
+  /* ===== Layout dasar ===== */
+  * { box-sizing: border-box; }
+  html { scroll-padding-top: env(safe-area-inset-top, 0px); }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  main { max-width: 920px; margin: 0 auto; padding: 16px; }
+  h1 { font-size: 1.5rem; margin: 4px 0 2px; }
+  h2 { font-size: 1.05rem; margin: 0 0 10px; }
+  .subtitle { color: var(--muted); margin: 0 0 16px; }
+  .note { color: var(--muted); font-size: .88rem; margin: 8px 0 0; }
+
+  section {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 14px;
+    margin-bottom: 14px;
+  }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .scroll-x { overflow-x: auto; }
+
+  /* ===== Form & tombol ===== */
+  label { font-size: .85rem; color: var(--muted); }
+  select, input {
+    font: inherit;
+    color: var(--ink);
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 6px 8px;
+  }
+  input[type=number] { width: 72px; }
+  button {
+    font: inherit;
+    cursor: pointer;
+    color: var(--ink);
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 7px 12px;
+  }
+  button.primary {
+    background: var(--accent);
+    color: var(--accent-ink);
+    border-color: var(--accent);
+    font-weight: 600;
+  }
+  button:focus-visible, select:focus-visible, input:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  /* ===== Tabel ===== */
+  table { border-collapse: collapse; width: 100%; font-size: .9rem; }
+  th, td { padding: 5px 8px; text-align: left; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th { color: var(--muted); font-weight: 600; }
+
+  /* ===== Gantt chart ===== */
+  .gantt {
+    display: flex;
+    height: 44px;
+    min-width: 480px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    overflow: hidden;
+  }
+  .gantt div {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-weight: 600;
+    font-size: .85rem;
+    border-right: 1px solid var(--card);
+  }
+  .axis { position: relative; height: 20px; min-width: 480px; font-size: .75rem; color: var(--muted); }
+  .axis span { position: absolute; transform: translateX(-50%); }
+
+  /* ===== Status proses ===== */
+  .state { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: .78rem; font-weight: 600; border: 1px solid var(--line); }
+  .state.RUNNING { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  .state.READY { border-color: var(--accent); color: var(--accent); }
+  .state.NEW, .state.TERMINATED { color: var(--muted); }
+
+  .info { display: flex; gap: 18px; flex-wrap: wrap; margin-top: 10px; }
+  .info b { font-size: 1.1rem; }
+</style>
+</head>
+
+<body>
+<main>
+  <h1>CPU Scheduling Simulator</h1>
+  <p class="subtitle">Kelompok 1 · Sistem Operasi. FCFS, SJF, Priority, dan Round Robin.</p>
+
+  <!-- 1. Input proses -->
+  <section>
+    <h2>1. Input proses</h2>
+    <div class="row" style="margin-bottom:10px">
+      <label>Skenario <select id="scenarioSelect"></select></label>
+      <button id="addBtn">Tambah proses</button>
+    </div>
+    <div class="scroll-x"><table id="inputTable"></table></div>
+    <p class="note">Priority: angka lebih kecil berarti prioritas lebih tinggi.</p>
+  </section>
+
+  <!-- 2. Algoritma dan kontrol -->
+  <section>
+    <h2>2. Algoritma dan kontrol</h2>
+    <div class="row">
+      <label>Algoritma
+        <select id="algoSelect">
+          <option value="FCFS">FCFS</option>
+          <option value="SJF">SJF (non-preemptive)</option>
+          <option value="PRIORITY">Priority (non-preemptive)</option>
+          <option value="RR">Round Robin</option>
+        </select>
+      </label>
+      <label id="quantumLabel">Quantum <input type="number" id="quantumInput" min="1" value="3"></label>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <button class="primary" id="stepBtn">Step</button>
+      <button id="playBtn">Auto play</button>
+      <button id="finishBtn">Selesaikan</button>
+      <button id="resetBtn">Reset</button>
+    </div>
+  </section>
+
+  <!-- 3. Visualisasi -->
+  <section>
+    <h2>3. Visualisasi</h2>
+    <div class="scroll-x">
+      <div class="gantt" id="gantt"></div>
+      <div class="axis" id="axis"></div>
+    </div>
+    <div class="info">
+      <span>Waktu <b id="clock">0</b></span>
+      <span>Sedang jalan <b id="runningNow">-</b></span>
+      <span>Ready queue <b id="readyQueue">-</b></span>
+    </div>
+    <div class="scroll-x" style="margin-top:10px"><table id="stateTable"></table></div>
+  </section>
+
+  <!-- 4. Hasil dan analisis -->
+  <section>
+    <h2>4. Hasil dan analisis</h2>
+    <div class="scroll-x"><table id="resultTable"></table></div>
+    <p class="note" id="averages"></p>
+    <h2 style="margin-top:14px">Perbandingan semua algoritma (skenario saat ini)</h2>
+    <div class="scroll-x"><table id="compareTable"></table></div>
+    <p class="note" id="analysis"></p>
+  </section>
+</main>
+
+<script>
+/* =====================================================================
+   1. DATA
+   ===================================================================== */
+
+// Skenario pengujian bawaan. Setiap proses: [arrival, burst, priority]
+const SCENARIOS = {
+  "1. Dasar (semua datang bersamaan)": [[0, 6, 2], [0, 8, 1], [0, 7, 3], [0, 3, 4]],
+  "2. Arrival berbeda":                [[0, 5, 2], [1, 3, 1], [2, 8, 4], [3, 6, 3]],
+  "3. Ada CPU idle":                   [[2, 4, 2], [3, 2, 1], [12, 5, 3], [13, 3, 2]],
+};
+
+const ALGORITHM_NAMES = { FCFS: "FCFS", SJF: "SJF", PRIORITY: "Priority", RR: "Round Robin" };
+
+// Penjelasan teori yang tampil di bagian analisis
+const THEORY = {
+  FCFS: "FCFS melayani proses sesuai urutan kedatangan. Sederhana, tetapi proses pendek bisa menunggu lama di belakang proses panjang (convoy effect).",
+  SJF: "SJF memilih burst terpendek di antara proses yang sudah datang. Rata-rata waiting time paling kecil secara teori, tetapi proses panjang berisiko starvation.",
+  PRIORITY: "Priority memilih proses dengan angka prioritas terkecil. Proses berprioritas rendah bisa starvation jika proses prioritas tinggi terus datang.",
+  RR: "Round Robin memberi tiap proses jatah quantum lalu mengantrekannya kembali. Response time baik dan adil, tetapi ada context switch lebih banyak. Quantum terlalu besar mendekati FCFS.",
+};
+
+/* =====================================================================
+   2. STATE APLIKASI
+   ===================================================================== */
+
+let processes = [];     // [{ arrival, burst, priority }]
+let currentTime = 0;    // posisi simulasi saat ini
+let autoPlayTimer = null;
+let result = null;      // hasil simulate() untuk algoritma terpilih
+
+const $ = (id) => document.getElementById(id);
+const processColor = (index) => `hsl(${(index * 57 + 200) % 360} 52% 40%)`;
+const getQuantum = () => Math.max(1, Number($("quantumInput").value) || 1);
+
+/* =====================================================================
+   3. LOGIKA SIMULASI (tidak menyentuh tampilan)
+   ===================================================================== */
+
+/**
+ * Menjalankan algoritma penjadwalan dan mengembalikan:
+ *  - segments: potongan Gantt chart { pid, start, end } (pid null = idle)
+ *  - metrics : per proses { finish, turnaround, waiting, response }
+ *  - rata-rata waiting, turnaround, response
+ */
+function simulate(processList, algorithm, quantum) {
+  const queue = processList
+    .map((p, index) => ({ ...p, index, remaining: p.burst }))
+    .sort((a, b) => a.arrival - b.arrival || a.index - b.index);
+
+  const segments = [];
+  const finishTime = {};
+  const firstRunTime = {};
+
+  // Tambah segmen; gabungkan dengan segmen sebelumnya jika proses sama
+  const addSegment = (pid, start, end) => {
+    const last = segments[segments.length - 1];
+    if (last && last.pid === pid && last.end === start) last.end = end;
+    else segments.push({ pid, start, end });
+  };
+
+  if (algorithm === "RR") {
+    runRoundRobin(queue, quantum, addSegment, finishTime, firstRunTime);
+  } else {
+    runNonPreemptive(queue, algorithm, addSegment, finishTime, firstRunTime);
+  }
+
+  const metrics = processList.map((p, i) => {
+    const turnaround = finishTime[i] - p.arrival;
+    return {
+      finish: finishTime[i],
+      turnaround,
+      waiting: turnaround - p.burst,
+      response: firstRunTime[i] - p.arrival,
+    };
+  });
+
+  const average = (key) => metrics.reduce((sum, m) => sum + m[key], 0) / metrics.length;
+  return {
+    segments,
+    metrics,
+    totalTime: segments[segments.length - 1].end,
+    avgWaiting: average("waiting"),
+    avgTurnaround: average("turnaround"),
+    avgResponse: average("response"),
+  };
+}
+
+// FCFS, SJF, Priority: proses berjalan sampai selesai
+function runNonPreemptive(waiting, algorithm, addSegment, finishTime, firstRunTime) {
+  let time = 0;
+  while (waiting.length) {
+    const ready = waiting.filter((p) => p.arrival <= time);
+
+    // Belum ada proses yang datang: CPU idle sampai kedatangan berikutnya
+    if (!ready.length) {
+      const nextArrival = Math.min(...waiting.map((p) => p.arrival));
+      addSegment(null, time, nextArrival);
+      time = nextArrival;
+      continue;
+    }
+
+    const chosen = pickNext(ready, algorithm);
+    waiting.splice(waiting.indexOf(chosen), 1);
+    firstRunTime[chosen.index] = time;
+    addSegment(chosen.index, time, time + chosen.burst);
+    time += chosen.burst;
+    finishTime[chosen.index] = time;
+  }
+}
+
+// Memilih proses dari daftar ready sesuai aturan algoritma
+function pickNext(ready, algorithm) {
+  const rules = {
+    FCFS:     (a, b) => a.arrival - b.arrival || a.index - b.index,
+    SJF:      (a, b) => a.burst - b.burst || a.arrival - b.arrival,
+    PRIORITY: (a, b) => a.priority - b.priority || a.arrival - b.arrival,
+  };
+  return [...ready].sort(rules[algorithm])[0];
+}
+
+// Round Robin: tiap proses dapat jatah waktu sebesar quantum
+function runRoundRobin(arrivals, quantum, addSegment, finishTime, firstRunTime) {
+  const readyQueue = [];
+  let nextArrival = 0;
+  let time = 0;
+  let finished = 0;
+
+  const enqueueArrivals = () => {
+    while (nextArrival < arrivals.length && arrivals[nextArrival].arrival <= time) {
+      readyQueue.push(arrivals[nextArrival++]);
+    }
+  };
+
+  while (finished < arrivals.length) {
+    enqueueArrivals();
+
+    if (!readyQueue.length) {
+      const wakeUp = arrivals[nextArrival].arrival;
+      addSegment(null, time, wakeUp);
+      time = wakeUp;
+      continue;
+    }
+
+    const proc = readyQueue.shift();
+    const slice = Math.min(quantum, proc.remaining);
+    if (firstRunTime[proc.index] === undefined) firstRunTime[proc.index] = time;
+
+    addSegment(proc.index, time, time + slice);
+    time += slice;
+    proc.remaining -= slice;
+
+    enqueueArrivals(); // proses yang datang selama slice masuk antrean lebih dulu
+    if (proc.remaining > 0) {
+      readyQueue.push(proc);
+    } else {
+      finishTime[proc.index] = time;
+      finished++;
+    }
+  }
+}
+
+// Status proses pada waktu tertentu (NEW / READY / RUNNING / TERMINATED)
+function getState(processIndex, time) {
+  if (time < processes[processIndex].arrival) return "NEW";
+  if (time >= result.metrics[processIndex].finish) return "TERMINATED";
+  const segment = result.segments.find((s) => s.start <= time && time < s.end);
+  return segment && segment.pid === processIndex ? "RUNNING" : "READY";
+}
+
+/* =====================================================================
+   4. TAMPILAN
+   ===================================================================== */
+
+function renderInputTable() {
+  const header = "<tr><th>PID</th><th>Arrival</th><th>Burst</th><th>Priority</th><th></th></tr>";
+  const rows = processes.map((p, i) => {
+    const cells = ["arrival", "burst", "priority"].map((field) => {
+      const min = field === "burst" ? 1 : 0;
+      return `<td><input type="number" min="${min}" value="${p[field]}"
+                data-index="${i}" data-field="${field}" aria-label="${field} P${i + 1}"></td>`;
+    }).join("");
+    return `<tr><td>P${i + 1}</td>${cells}
+            <td><button data-delete="${i}" aria-label="Hapus P${i + 1}">Hapus</button></td></tr>`;
+  });
+  $("inputTable").innerHTML = header + rows.join("");
+}
+
+// Gantt chart hanya digambar sampai waktu currentTime
+function renderGantt() {
+  const total = result.totalTime;
+
+  $("gantt").innerHTML = result.segments.map((seg) => {
+    const end = Math.min(seg.end, currentTime);
+    if (end <= seg.start) return "";
+    const width = ((end - seg.start) / total) * 100;
+    const isIdle = seg.pid === null;
+    const style = `width:${width}%;background:${isIdle ? "var(--idle)" : processColor(seg.pid)};${isIdle ? "color:var(--muted)" : ""}`;
+    return `<div style="${style}">${isIdle ? "idle" : "P" + (seg.pid + 1)}</div>`;
+  }).join("");
+
+  const ticks = new Set([0, currentTime]);
+  result.segments.forEach((seg) => {
+    if (seg.start <= currentTime) ticks.add(seg.start);
+    if (seg.end <= currentTime) ticks.add(seg.end);
+  });
+  $("axis").innerHTML = [...ticks]
+    .map((x) => `<span style="left:${(x / total) * 100}%">${x}</span>`)
+    .join("");
+}
+
+function renderStatus() {
+  const states = processes.map((_, i) => getState(i, currentTime));
+  const current = result.segments.find((s) => s.start <= currentTime && currentTime < s.end);
+
+  $("clock").textContent = currentTime;
+  $("runningNow").textContent =
+    current && current.pid !== null ? "P" + (current.pid + 1)
+    : currentTime >= result.totalTime ? "selesai" : "idle";
+
+  const readyList = states.map((s, i) => (s === "READY" ? "P" + (i + 1) : null)).filter(Boolean);
+  $("readyQueue").textContent = readyList.join(", ") || "-";
+
+  const rows = processes.map((p, i) => {
+    let executed = 0;
+    result.segments.forEach((s) => {
+      if (s.pid === i) executed += Math.max(0, Math.min(s.end, currentTime) - s.start);
+    });
+    return `<tr><td>P${i + 1}</td>
+            <td><span class="state ${states[i]}">${states[i]}</span></td>
+            <td>${p.burst - executed}</td></tr>`;
+  });
+  $("stateTable").innerHTML = "<tr><th>Proses</th><th>Status</th><th>Sisa burst</th></tr>" + rows.join("");
+}
+
+function renderResults() {
+  const rows = processes.map((_, i) => {
+    const m = result.metrics[i];
+    const done = currentTime >= m.finish;
+    const cells = done
+      ? `<td>${m.finish}</td><td>${m.turnaround}</td><td>${m.waiting}</td><td>${m.response}</td>`
+      : "<td>-</td><td>-</td><td>-</td><td>-</td>";
+    return `<tr><td>P${i + 1}</td>${cells}</tr>`;
+  });
+  $("resultTable").innerHTML =
+    "<tr><th>Proses</th><th>Selesai</th><th>Turnaround</th><th>Waiting</th><th>Response</th></tr>" + rows.join("");
+
+  const finished = currentTime >= result.totalTime;
+  $("averages").textContent = finished
+    ? `Rata-rata: Waiting ${result.avgWaiting.toFixed(2)} · Turnaround ${result.avgTurnaround.toFixed(2)} · Response ${result.avgResponse.toFixed(2)}`
+    : "Rata-rata ditampilkan setelah semua proses selesai.";
+  $("stepBtn").disabled = $("finishBtn").disabled = finished;
+}
+
+function renderComparison() {
+  const selected = $("algoSelect").value;
+  const rows = Object.keys(ALGORITHM_NAMES).map((algo) => {
+    const r = simulate(processes, algo, getQuantum());
+    const label = ALGORITHM_NAMES[algo] + (algo === selected ? " (dipilih)" : "");
+    return `<tr><td>${label}</td><td>${r.avgWaiting.toFixed(2)}</td>
+            <td>${r.avgTurnaround.toFixed(2)}</td><td>${r.avgResponse.toFixed(2)}</td></tr>`;
+  });
+  $("compareTable").innerHTML =
+    "<tr><th>Algoritma</th><th>Avg waiting</th><th>Avg turnaround</th><th>Avg response</th></tr>" + rows.join("");
+  $("analysis").textContent = THEORY[selected];
+}
+
+function render() {
+  $("quantumLabel").style.display = $("algoSelect").value === "RR" ? "" : "none";
+  renderGantt();
+  renderStatus();
+  renderResults();
+  renderComparison();
+}
+
+/* =====================================================================
+   5. KONTROL SIMULASI
+   ===================================================================== */
+
+function stopAutoPlay() {
+  if (autoPlayTimer) clearInterval(autoPlayTimer);
+  autoPlayTimer = null;
+  $("playBtn").textContent = "Auto play";
+}
+
+function resetSimulation() {
+  stopAutoPlay();
+  currentTime = 0;
+  result = simulate(processes, $("algoSelect").value, getQuantum());
+  render();
+}
+
+function loadScenario(name) {
+  processes = SCENARIOS[name].map(([arrival, burst, priority]) => ({ arrival, burst, priority }));
+  renderInputTable();
+  resetSimulation();
+}
+
+function stepForward() {
+  if (currentTime < result.totalTime) {
+    currentTime++;
+    render();
+  }
+}
+
+function toggleAutoPlay() {
+  if (autoPlayTimer) return stopAutoPlay();
+  if (currentTime >= result.totalTime) currentTime = 0;
+  $("playBtn").textContent = "Jeda";
+  autoPlayTimer = setInterval(() => {
+    currentTime++;
+    render();
+    if (currentTime >= result.totalTime) stopAutoPlay();
+  }, 600);
+}
+
+/* =====================================================================
+   6. EVENT LISTENER & INISIALISASI
+   ===================================================================== */
+
+$("scenarioSelect").innerHTML = Object.keys(SCENARIOS).map((name) => `<option>${name}</option>`).join("");
+$("scenarioSelect").onchange = (e) => loadScenario(e.target.value);
+$("algoSelect").onchange = resetSimulation;
+$("quantumInput").onchange = resetSimulation;
+
+$("stepBtn").onclick = stepForward;
+$("playBtn").onclick = toggleAutoPlay;
+$("resetBtn").onclick = resetSimulation;
+$("finishBtn").onclick = () => { stopAutoPlay(); currentTime = result.totalTime; render(); };
+
+$("addBtn").onclick = () => {
+  if (processes.length >= 10) return;
+  processes.push({ arrival: 0, burst: 4, priority: 1 });
+  renderInputTable();
+  resetSimulation();
+};
+
+// Edit nilai input (event delegation pada tabel)
+$("inputTable").addEventListener("change", (e) => {
+  const { index, field } = e.target.dataset;
+  if (field === undefined) return;
+  const min = field === "burst" ? 1 : 0;
+  processes[Number(index)][field] = Math.max(min, Number(e.target.value) || 0);
+  renderInputTable();
+  resetSimulation();
+});
+
+// Hapus proses (minimal 1 proses tersisa)
+$("inputTable").addEventListener("click", (e) => {
+  const index = e.target.dataset.delete;
+  if (index === undefined || processes.length <= 1) return;
+  processes.splice(Number(index), 1);
+  renderInputTable();
+  resetSimulation();
+});
+
+loadScenario(Object.keys(SCENARIOS)[0]);
+</script>
+</body>
+</html>
